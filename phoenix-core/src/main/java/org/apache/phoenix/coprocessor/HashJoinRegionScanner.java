@@ -17,12 +17,6 @@
  */
 package org.apache.phoenix.coprocessor;
 
-import java.io.IOException;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Queue;
-
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.DoNotRetryIOException;
 import org.apache.hadoop.hbase.HRegionInfo;
@@ -30,6 +24,7 @@ import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.coprocessor.RegionCoprocessorEnvironment;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.hadoop.hbase.regionserver.RegionScanner;
+import org.apache.hadoop.hbase.regionserver.ScannerContext;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.phoenix.cache.GlobalCache;
 import org.apache.phoenix.cache.HashCache;
@@ -47,6 +42,12 @@ import org.apache.phoenix.schema.tuple.ResultTuple;
 import org.apache.phoenix.schema.tuple.Tuple;
 import org.apache.phoenix.util.ServerUtil;
 import org.apache.phoenix.util.TupleUtil;
+
+import java.io.IOException;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Queue;
 
 public class HashJoinRegionScanner implements RegionScanner {
     
@@ -265,12 +266,12 @@ public class HashJoinRegionScanner implements RegionScanner {
     }
 
     @Override
-    public boolean nextRaw(List<Cell> result, int limit)
+    public boolean nextRaw(List<Cell> result, ScannerContext scannerContext)
             throws IOException {
         try {
             while (shouldAdvance()) {
-                hasMore = scanner.nextRaw(result, limit);
-                processResults(result, limit >= 0);
+                hasMore = scanner.nextRaw(result, scannerContext);
+                processResults(result, false);
                 result.clear();
             }
             
@@ -308,11 +309,11 @@ public class HashJoinRegionScanner implements RegionScanner {
     }
 
     @Override
-    public boolean next(List<Cell> result, int limit) throws IOException {
+    public boolean next(List<Cell> result, ScannerContext scannerContext) throws IOException {
         try {
             while (shouldAdvance()) {
-                hasMore = scanner.next(result, limit);
-                processResults(result, limit >= 0);
+                hasMore = scanner.next(result, scannerContext);
+                processResults(result,false);
                 result.clear();
             }
             
@@ -328,5 +329,9 @@ public class HashJoinRegionScanner implements RegionScanner {
         return this.scanner.getMaxResultSize();
     }
 
+    @Override
+    public int getBatch() {
+        return this.scanner.getBatch();
+    }
 }
 

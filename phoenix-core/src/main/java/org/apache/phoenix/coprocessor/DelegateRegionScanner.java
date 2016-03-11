@@ -16,12 +16,13 @@
  * limitations under the License.
  */package org.apache.phoenix.coprocessor;
 
-import java.io.IOException;
-import java.util.List;
-
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.regionserver.RegionScanner;
+import org.apache.hadoop.hbase.regionserver.ScannerContext;
+
+import java.io.IOException;
+import java.util.List;
 
 public class DelegateRegionScanner implements RegionScanner {
 
@@ -60,19 +61,25 @@ public class DelegateRegionScanner implements RegionScanner {
         return delegate.getMaxResultSize();
     }
 
-    public boolean next(List<Cell> arg0, int arg1) throws IOException {
-        return delegate.next(arg0, arg1);
+
+    public boolean next(List<Cell> result, ScannerContext scannerContext) throws IOException {
+        return delegate.next(result, scannerContext);
     }
 
     public boolean next(List<Cell> arg0) throws IOException {
         return delegate.next(arg0);
     }
 
-    public boolean nextRaw(List<Cell> arg0, int arg1) throws IOException {
-        return delegate.nextRaw(arg0, arg1);
+    public boolean nextRaw(List<Cell> result, ScannerContext scannerContext) throws IOException {
+        return delegate.nextRaw(result,scannerContext);
     }
 
     public boolean nextRaw(List<Cell> arg0) throws IOException {
         return delegate.nextRaw(arg0);
+    }
+
+    @Override
+    public int getBatch() {
+        return delegate.getBatch();
     }
 }

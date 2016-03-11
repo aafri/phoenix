@@ -17,14 +17,6 @@
  */
 package org.apache.phoenix.schema.stats;
 
-import static org.apache.phoenix.query.QueryServices.COMMIT_STATS_ASYNC;
-import static org.apache.phoenix.query.QueryServicesOptions.DEFAULT_COMMIT_STATS_ASYNC;
-
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.Callable;
-
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -34,7 +26,16 @@ import org.apache.hadoop.hbase.client.Mutation;
 import org.apache.hadoop.hbase.coprocessor.RegionCoprocessorEnvironment;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.InternalScanner;
+import org.apache.hadoop.hbase.regionserver.ScannerContext;
 import org.apache.phoenix.hbase.index.util.ImmutableBytesPtr;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.Callable;
+
+import static org.apache.phoenix.query.QueryServices.COMMIT_STATS_ASYNC;
+import static org.apache.phoenix.query.QueryServicesOptions.DEFAULT_COMMIT_STATS_ASYNC;
 
 
 /**
@@ -69,8 +70,8 @@ public class StatisticsScanner implements InternalScanner {
     }
 
     @Override
-    public boolean next(List<Cell> result, int limit) throws IOException {
-        boolean ret = delegate.next(result, limit);
+    public boolean next(List<Cell> result,ScannerContext scannerContext) throws IOException {
+        boolean ret = delegate.next(result, scannerContext);
         updateStat(result);
         return ret;
     }

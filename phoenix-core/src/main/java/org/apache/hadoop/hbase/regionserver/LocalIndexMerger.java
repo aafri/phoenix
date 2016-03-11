@@ -17,9 +17,6 @@
  */
 package org.apache.hadoop.hbase.regionserver;
 
-import java.io.IOException;
-import java.util.List;
-
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.HTableDescriptor;
@@ -33,6 +30,9 @@ import org.apache.phoenix.schema.types.PBoolean;
 import org.apache.phoenix.util.IndexUtil;
 import org.apache.phoenix.util.MetaDataUtil;
 import org.apache.phoenix.util.SchemaUtil;
+
+import java.io.IOException;
+import java.util.List;
 
 public class LocalIndexMerger extends BaseRegionServerObserver {
 
@@ -81,7 +81,7 @@ public class LocalIndexMerger extends BaseRegionServerObserver {
                 this.mergedRegion = rmt.stepsBeforePONR(rss, rss, false);
                 rmt.prepareMutationsForMerge(mergedRegion.getRegionInfo(),
                     indexRegionA.getRegionInfo(), indexRegionB.getRegionInfo(),
-                    rss.getServerName(), metaEntries);
+                    rss.getServerName(), metaEntries, mergedRegion.getTableDesc().getRegionReplication());
             } catch (Exception e) {
                 ctx.bypass();
                 LOG.warn("index regions merge failed with the exception ", e);

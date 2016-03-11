@@ -17,17 +17,10 @@
  */
 package org.apache.phoenix.coprocessor;
 
-import java.io.IOException;
-import java.util.List;
-import java.util.Set;
-
+import co.cask.tephra.Transaction;
+import com.google.common.collect.ImmutableList;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.Cell;
-import org.apache.hadoop.hbase.CoprocessorEnvironment;
-import org.apache.hadoop.hbase.DoNotRetryIOException;
-import org.apache.hadoop.hbase.HConstants;
-import org.apache.hadoop.hbase.HRegionInfo;
-import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.KeyValue.Type;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Scan;
@@ -38,6 +31,7 @@ import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.hadoop.hbase.io.TimeRange;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.RegionScanner;
+import org.apache.hadoop.hbase.regionserver.ScannerContext;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.htrace.Span;
 import org.apache.htrace.Trace;
@@ -57,9 +51,9 @@ import org.apache.phoenix.util.IndexUtil;
 import org.apache.phoenix.util.ScanUtil;
 import org.apache.phoenix.util.ServerUtil;
 
-import com.google.common.collect.ImmutableList;
-
-import co.cask.tephra.Transaction;
+import java.io.IOException;
+import java.util.List;
+import java.util.Set;
 
 
 abstract public class BaseScannerRegionObserver extends BaseRegionObserver {
@@ -277,6 +271,10 @@ abstract public class BaseScannerRegionObserver extends BaseRegionObserver {
             final ValueBitSet kvSchemaBitSet, final TupleProjector projector,
             final ImmutableBytesWritable ptr) {
         return new RegionScanner() {
+            @Override
+            public int getBatch() {
+                return s.getBatch();
+            }
 
             @Override
             public boolean next(List<Cell> results) throws IOException {
@@ -289,9 +287,9 @@ abstract public class BaseScannerRegionObserver extends BaseRegionObserver {
             }
 
             @Override
-            public boolean next(List<Cell> result, int limit) throws IOException {
+            public boolean next(List<Cell> result,ScannerContext scannerContext ) throws IOException {
                 try {
-                    return s.next(result, limit);
+                    return s.next(result, scannerContext);
                 } catch (Throwable t) {
                     ServerUtil.throwIOException(c.getEnvironment().getRegion().getRegionNameAsString(), t);
                     return false; // impossible
@@ -355,9 +353,9 @@ abstract public class BaseScannerRegionObserver extends BaseRegionObserver {
             }
 
             @Override
-            public boolean nextRaw(List<Cell> result, int limit) throws IOException {
+            public boolean nextRaw(List<Cell> result,ScannerContext scannerContext) throws IOException {
                 try {
-                    boolean next = s.nextRaw(result, limit);
+                    boolean next = s.nextRaw(result, scannerContext);
                     Cell arrayElementCell = null;
                     if (result.size() == 0) {
                         return next;
