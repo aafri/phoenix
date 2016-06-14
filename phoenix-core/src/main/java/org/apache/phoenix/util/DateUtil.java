@@ -17,8 +17,15 @@
  */
 package org.apache.phoenix.util;
 
-import static org.apache.phoenix.query.QueryConstants.MAX_ALLOWED_NANOS;
-import static org.apache.phoenix.query.QueryConstants.MILLIS_TO_NANOS_CONVERTOR;
+import com.google.common.collect.Lists;
+import org.apache.commons.lang.time.FastDateFormat;
+import org.apache.phoenix.schema.IllegalDataException;
+import org.apache.phoenix.schema.types.PDataType;
+import org.joda.time.DateTimeZone;
+import org.joda.time.chrono.ISOChronology;
+import org.joda.time.format.DateTimeFormatter;
+import org.joda.time.format.DateTimeFormatterBuilder;
+import org.joda.time.format.ISODateTimeFormat;
 
 import java.math.BigDecimal;
 import java.sql.Date;
@@ -31,21 +38,13 @@ import java.text.SimpleDateFormat;
 import java.util.List;
 import java.util.TimeZone;
 
-import org.apache.commons.lang.time.FastDateFormat;
-import org.apache.phoenix.schema.IllegalDataException;
-import org.apache.phoenix.schema.types.PDataType;
-import org.joda.time.DateTimeZone;
-import org.joda.time.chrono.ISOChronology;
-import org.joda.time.format.DateTimeFormatter;
-import org.joda.time.format.DateTimeFormatterBuilder;
-import org.joda.time.format.ISODateTimeFormat;
-
-import com.google.common.collect.Lists;
+import static org.apache.phoenix.query.QueryConstants.MAX_ALLOWED_NANOS;
+import static org.apache.phoenix.query.QueryConstants.MILLIS_TO_NANOS_CONVERTOR;
 
 
 @SuppressWarnings({ "serial", "deprecation" })
 public class DateUtil {
-    public static final String DEFAULT_TIME_ZONE_ID = "GMT";
+    public static final String DEFAULT_TIME_ZONE_ID = "GMT+8";
     public static final String LOCAL_TIME_ZONE_ID = "LOCAL";
     private static final TimeZone DEFAULT_TIME_ZONE = TimeZone.getTimeZone(DEFAULT_TIME_ZONE_ID);
     
