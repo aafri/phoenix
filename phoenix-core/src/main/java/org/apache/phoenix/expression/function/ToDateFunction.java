@@ -146,7 +146,7 @@ public class ToDateFunction extends ScalarFunction {
         } else {
             int nChildren = children.size();
             if (nChildren == 1) {
-                dateFormat = WritableUtils.readString(input); 
+                dateFormat = WritableUtils.readString(input);
                 timeZoneId =  WritableUtils.readString(input);
             } else if (nChildren == 2 || DateUtil.LOCAL_TIME_ZONE_ID.equalsIgnoreCase(getTimeZoneIdArg())) {
                 dateFormat = getDateFormatArg();
