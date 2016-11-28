@@ -63,10 +63,19 @@ public class NamespaceSchemaMappingIT extends ParallelStatsDisabledIT {
         String hbaseFullTableName = schemaName + ":" + tableName;
         HBaseAdmin admin = driver.getConnectionQueryServices(getUrl(), TestUtil.TEST_PROPERTIES).getAdmin();
         admin.createNamespace(NamespaceDescriptor.create(namespace).build());
-        admin.createTable(new HTableDescriptor(TableName.valueOf(namespace, tableName))
-                .addFamily(new HColumnDescriptor(QueryConstants.DEFAULT_COLUMN_FAMILY_BYTES)));
-        admin.createTable(new HTableDescriptor(TableName.valueOf(phoenixFullTableName))
-                .addFamily(new HColumnDescriptor(QueryConstants.DEFAULT_COLUMN_FAMILY_BYTES)));
+        HTableDescriptor hTableDescriptor = new HTableDescriptor(TableName.valueOf(namespace, tableName));
+        HColumnDescriptor hColumnDescriptor = new HColumnDescriptor(QueryConstants.DEFAULT_COLUMN_FAMILY_BYTES);
+        hTableDescriptor.addFamily(hColumnDescriptor);
+        admin.createTable(hTableDescriptor);
+//        admin.createTable(new HTableDescriptor(TableName.valueOf(namespace, tableName))
+//                .addFamily(new HColumnDescriptor(QueryConstants.DEFAULT_COLUMN_FAMILY_BYTES)));
+
+        HTableDescriptor hPhoenixFullTableDescriptor = new HTableDescriptor(TableName.valueOf(phoenixFullTableName));
+        HColumnDescriptor hPhoenixFullColumnDescriptor = new HColumnDescriptor(QueryConstants.DEFAULT_COLUMN_FAMILY_BYTES);
+        hPhoenixFullTableDescriptor.addFamily(hPhoenixFullColumnDescriptor);
+        admin.createTable(hPhoenixFullTableDescriptor);
+//        admin.createTable(new HTableDescriptor(TableName.valueOf(phoenixFullTableName))
+//                .addFamily(new HColumnDescriptor(QueryConstants.DEFAULT_COLUMN_FAMILY_BYTES)));
 
         Put put = new Put(PVarchar.INSTANCE.toBytes(phoenixFullTableName));
         put.addColumn(QueryConstants.DEFAULT_COLUMN_FAMILY_BYTES, QueryConstants.EMPTY_COLUMN_BYTES,
