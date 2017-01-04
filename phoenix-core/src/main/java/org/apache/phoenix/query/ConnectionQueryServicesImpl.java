@@ -275,9 +275,9 @@ public class ConnectionQueryServicesImpl extends DelegateQueryServices implement
     private final boolean renewLeaseEnabled;
     private final boolean isAutoUpgradeEnabled;
     private final AtomicBoolean upgradeRequired = new AtomicBoolean(false);
-    private static final byte[] UPGRADE_MUTEX = "UPGRADE_MUTEX".getBytes();
-    private static final byte[] UPGRADE_MUTEX_LOCKED = "UPGRADE_MUTEX_LOCKED".getBytes();
-    private static final byte[] UPGRADE_MUTEX_UNLOCKED = "UPGRADE_MUTEX_UNLOCKED".getBytes();
+    public static final byte[] UPGRADE_MUTEX = "UPGRADE_MUTEX".getBytes();
+    public static final byte[] UPGRADE_MUTEX_LOCKED = "UPGRADE_MUTEX_LOCKED".getBytes();
+    public static final byte[] UPGRADE_MUTEX_UNLOCKED = "UPGRADE_MUTEX_UNLOCKED".getBytes();
 
     private static interface FeatureSupported {
         boolean isSupported(ConnectionQueryServices services);
@@ -2392,6 +2392,7 @@ public class ConnectionQueryServicesImpl extends DelegateQueryServices implement
                                                 + " is found but client does not have "
                                                 + IS_NAMESPACE_MAPPING_ENABLED + " enabled")
                                                 .build().buildException(); }
+                                createSysMutexTable(admin);
                             }
                             Properties scnProps = PropertiesUtil.deepCopy(props);
                             scnProps.setProperty(PhoenixRuntime.CURRENT_SCN_ATTRIB,
@@ -2461,10 +2462,33 @@ public class ConnectionQueryServicesImpl extends DelegateQueryServices implement
         }
     }
     
+    private void createSysMutexTable(HBaseAdmin admin) throws IOException, SQLException {
+        try {
+            HTableDescriptor tableDesc = new HTableDescriptor(
+                    TableName.valueOf(PhoenixDatabaseMetaData.SYSTEM_MUTEX_NAME_BYTES));
+            HColumnDescriptor columnDesc = new HColumnDescriptor(
+                    PhoenixDatabaseMetaData.SYSTEM_MUTEX_FAMILY_NAME_BYTES);
+            columnDesc.setTimeToLive(TTL_FOR_MUTEX); // Let mutex expire after some time
+            tableDesc.addFamily(columnDesc);
+            admin.createTable(tableDesc);
+            try (HTableInterface sysMutexTable = getTable(PhoenixDatabaseMetaData.SYSTEM_MUTEX_NAME_BYTES)) {
+                byte[] mutexRowKey = SchemaUtil.getTableKey(null, PhoenixDatabaseMetaData.SYSTEM_CATALOG_SCHEMA,
+                        PhoenixDatabaseMetaData.SYSTEM_CATALOG_TABLE);
+                Put put = new Put(mutexRowKey);
+                put.add(PhoenixDatabaseMetaData.SYSTEM_MUTEX_FAMILY_NAME_BYTES, UPGRADE_MUTEX, UPGRADE_MUTEX_UNLOCKED);
+                sysMutexTable.put(put);
+            }
+        } catch (TableExistsException e) {
+            // Ignore
+        }
+    }
+
     private void createOtherSystemTables(PhoenixConnection metaConnection) throws SQLException {
         try {
             metaConnection.createStatement().execute(QueryConstants.CREATE_SEQUENCE_METADATA);
-        } catch (TableAlreadyExistsException ignore) {}
+        } catch (TableAlreadyExistsException e) {
+            nSequenceSaltBuckets = getSaltBuckets(e);
+        }
         try {
             metaConnection.createStatement().execute(QueryConstants.CREATE_STATS_TABLE_METADATA);
         } catch (TableAlreadyExistsException ignore) {}
@@ -2973,24 +2997,6 @@ public class ConnectionQueryServicesImpl extends DelegateQueryServices implement
     public boolean acquireUpgradeMutex(long currentServerSideTableTimestamp, byte[] rowToLock) throws IOException,
             SQLException {
         Preconditions.checkArgument(currentServerSideTableTimestamp < MIN_SYSTEM_TABLE_TIMESTAMP);
-        try (HBaseAdmin admin = getAdmin()) {
-            try {
-                HTableDescriptor tableDesc = new HTableDescriptor(
-                        TableName.valueOf(PhoenixDatabaseMetaData.SYSTEM_MUTEX_NAME_BYTES));
-                HColumnDescriptor columnDesc = new HColumnDescriptor(
-                        PhoenixDatabaseMetaData.SYSTEM_MUTEX_FAMILY_NAME_BYTES);
-                columnDesc.setTimeToLive(TTL_FOR_MUTEX); // Let mutex expire after some time
-                tableDesc.addFamily(columnDesc);
-                admin.createTable(tableDesc);
-                try (HTableInterface sysMutexTable = getTable(PhoenixDatabaseMetaData.SYSTEM_MUTEX_NAME_BYTES)) {
-                    Put put = new Put(rowToLock);
-                    put.addColumn(PhoenixDatabaseMetaData.SYSTEM_MUTEX_FAMILY_NAME_BYTES, UPGRADE_MUTEX, UPGRADE_MUTEX_UNLOCKED);
-                    sysMutexTable.put(put);
-                }
-            } catch (TableExistsException e) {
-                // Ignore
-            }
-        }
         try (HTableInterface sysMutexTable = getTable(PhoenixDatabaseMetaData.SYSTEM_MUTEX_NAME_BYTES)) {
             byte[] family = PhoenixDatabaseMetaData.SYSTEM_MUTEX_FAMILY_NAME_BYTES;
             byte[] qualifier = UPGRADE_MUTEX;
@@ -2999,8 +3005,20 @@ public class ConnectionQueryServicesImpl extends DelegateQueryServices implement
             Put put = new Put(rowToLock);
             put.addColumn(family, qualifier, newValue);
             boolean acquired =  sysMutexTable.checkAndPut(rowToLock, family, qualifier, oldValue, put);
-            if (!acquired) { throw new UpgradeInProgressException(getVersion(currentServerSideTableTimestamp),
-                    getVersion(MIN_SYSTEM_TABLE_TIMESTAMP)); }
+            if (!acquired) {
+                /*
+                 * Because of TTL on the SYSTEM_MUTEX_FAMILY, it is very much possible that the cell
+                 * has gone away. So we need to retry with an old value of null. Note there is a small
+                 * race condition here that between the two checkAndPut calls, it is possible that another
+                 * request would have set the value back to UPGRADE_MUTEX_UNLOCKED. In that scenario this
+                 * following checkAndPut would still return false even though the lock was available.
+                 */
+                acquired =  sysMutexTable.checkAndPut(rowToLock, family, qualifier, null, put);
+                if (!acquired) {
+                    throw new UpgradeInProgressException(getVersion(currentServerSideTableTimestamp),
+                        getVersion(MIN_SYSTEM_TABLE_TIMESTAMP));
+                }
+            }
             return true;
         }
     }
@@ -3867,6 +3885,12 @@ public class ConnectionQueryServicesImpl extends DelegateQueryServices implement
         private void waitForRandomDuration() throws InterruptedException {
             new CountDownLatch(1).await(random.nextInt(MAX_WAIT_TIME), MILLISECONDS);
         }
+        
+        private static class InternalRenewLeaseTaskException extends Exception {
+            public InternalRenewLeaseTaskException(String msg) {
+                super(msg);
+            }
+        }
 
         @Override
         public void run() {
@@ -3888,7 +3912,7 @@ public class ConnectionQueryServicesImpl extends DelegateQueryServices implement
                     WeakReference<PhoenixConnection> connRef =
                             connectionsQueue.poll(1, TimeUnit.MILLISECONDS);
                     if (connRef == null) {
-                        throw new IllegalStateException(
+                        throw new InternalRenewLeaseTaskException(
                                 "Connection ref found to be null. This is a bug. Some other thread removed items from the connection queue.");
                     }
                     PhoenixConnection conn = connRef.get();
@@ -3907,7 +3931,7 @@ public class ConnectionQueryServicesImpl extends DelegateQueryServices implement
                             WeakReference<TableResultIterator> ref =
                                     scannerQueue.poll(1, TimeUnit.MILLISECONDS);
                             if (ref == null) {
-                                throw new IllegalStateException(
+                                throw new InternalRenewLeaseTaskException(
                                         "TableResulIterator ref found to be null. This is a bug. Some other thread removed items from the scanner queue.");
                             }
                             TableResultIterator scanningItr = ref.get();
@@ -3944,13 +3968,24 @@ public class ConnectionQueryServicesImpl extends DelegateQueryServices implement
                     }
                     numConnections--;
                 }
-            } catch (InterruptedException e1) {
+            } catch (InternalRenewLeaseTaskException e) {
+                logger.error("Exception thrown when renewing lease. Draining the queue of scanners ", e);
+                // clear up the queue since the task is about to be unscheduled.
+                connectionsQueue.clear();
+                // throw an exception since we want the task execution to be suppressed because we just encountered an
+                // exception that happened because of a bug.
+                throw new RuntimeException(e);
+            } catch (InterruptedException e) {
                 Thread.currentThread().interrupt(); // restore the interrupt status
-                logger.warn("Thread interrupted when renewing lease ", e1);
-                throw new RuntimeException(e1);
-            } catch (Exception e2) {
-                logger.warn("Exception thrown when renewing lease ", e2);
-                throw new RuntimeException(e2);
+                logger.error("Thread interrupted when renewing lease.", e);
+            } catch (Exception e) {
+                logger.error("Exception thrown when renewing lease ", e);
+                // don't drain the queue and swallow the exception in this case since we don't want the task
+                // execution to be suppressed because renewing lease of a scanner failed.
+            } catch (Throwable e) {
+                logger.error("Exception thrown when renewing lease. Draining the queue of scanners ", e);
+                connectionsQueue.clear(); // clear up the queue since the task is about to be unscheduled.
+                throw new RuntimeException(e);
             }
         }
     }
